@@ -1,0 +1,23 @@
+# Build files
+build/
+*.o
+*.exe
+*.out
+pok_robot
+
+# Logs
+logs/
+*.log
+
+# Temporary
+*.swp
+*~
+.DS_Store
+
+# VS Code
+.vscode/
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
