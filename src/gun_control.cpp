@@ -104,19 +104,19 @@ void GunControl::pump_set(uint8_t percent) {
 // Швидкість залежить від кута нахилу
 void GunControl::move_horiz(int value) {
     BusManagerFrame fr = {0};
-    if (value > 30) fr.movement = 0x01;      // право (повна швидкість)
-    else if (value > 10) fr.movement = 0x01; // право (повільно)
-    else if (value < -30) fr.movement = 0x04; // ліво
-    else if (value < -10) fr.movement = 0x04;
+    int abs_val = abs(value);
+    if (abs_val > 15) {
+        fr.movement = (value > 0) ? 0x01 : 0x04;  // право / ліво
+    }
     bm_send(&fr);
 }
 
 void GunControl::move_vert(int value) {
     BusManagerFrame fr = {0};
-    if (value > 30) fr.movement = 0x10;      // вниз
-    else if (value > 10) fr.movement = 0x10;
-    else if (value < -30) fr.movement = 0x40; // вгору
-    else if (value < -10) fr.movement = 0x40;
+    int abs_val = abs(value);
+    if (abs_val > 15) {
+        fr.movement = (value > 0) ? 0x10 : 0x40;  // вниз / вгору (інверсія)
+    }
     bm_send(&fr);
 }
 
@@ -127,13 +127,13 @@ void GunControl::stop_all() {
 }
 
 void GunControl::run() {
-    std::cout << "\n=== POK Гармата - Керування активне ===\n";
-    std::cout << "Лівий стік: чим сильніше нахил — тим швидше\n";
-    std::cout << "Тригер - аварійний стоп\n";
-    std::cout << "Q - вихід\n\n";
+    std::cout << "\n=== POK Гармата - Фінальне керування ===\n";
+    std::cout << "Лівий стік: чим сильніше нахил — тим швидше рух\n";
+    std::cout << "Тригер — аварійний стоп\n";
+    std::cout << "Q — вихід\n\n";
 
     while (true) {
-        // Джойстик
+        // Джойстик (реалтайм)
         if (g_joy_fd >= 0) {
             js_event event;
             while (read(g_joy_fd, &event, sizeof(event)) > 0) {
@@ -149,14 +149,21 @@ void GunControl::run() {
             }
         }
 
-        // Клавіатура
-        char c = 0;
-        if (read(0, &c, 1) > 0) {
-            if (c == 'q' || c == 'Q') break;
-            if (c == ' ') stop_all();
+        // Клавіатура (неблокуюча)
+        fd_set fds;
+        FD_ZERO(&fds);
+        FD_SET(0, &fds);
+        struct timeval tv = {0, 10000};
+
+        if (select(1, &fds, NULL, NULL, &tv) > 0) {
+            char c;
+            if (read(0, &c, 1) > 0) {
+                if (c == 'q' || c == 'Q') break;
+                if (c == ' ') stop_all();
+            }
         }
 
-        usleep(15000);
+        usleep(12000); // 12ms — оптимально для чуйності
     }
 
     stop_all();
