@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <string>
 
 class GunControl {
 public:
@@ -7,14 +8,20 @@ public:
     ~GunControl();
 
     bool init();
-    void run();                     // ← Головне меню
+    void run();                     // головний цикл (клавіатура + джойстик)
 
     void pump_set(uint8_t percent);
-    void move_horiz(int dir);
-    void move_vert(int dir);
+    void move_horiz(int value);     // -100 .. 100
+    void move_vert(int value);      // -100 .. 100
     void stop_all();
 
 private:
-    int sock = -1;
+    int can_sock = -1;
+    int joy_fd = -1;
     bool remote_override = true;
+
+    bool init_can();
+    bool init_joystick();
+    void process_joystick();        // обробка подій від джойстика
+    void process_keyboard();
 };

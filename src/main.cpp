@@ -3,7 +3,7 @@
 
 int main() {
     std::cout << "========================================\n";
-    std::cout << "   POK Fire Robot Control System v0.3\n";
+    std::cout << "   POK Fire Robot Control System v0.4\n";
     std::cout << "========================================\n\n";
 
     GunControl gun;
@@ -13,7 +13,7 @@ int main() {
         return 1;
     }
 
-    gun.run();        // ← викликаємо нову функцію run()
+    gun.run();
 
     std::cout << "Система завершена.\n";
     return 0;
