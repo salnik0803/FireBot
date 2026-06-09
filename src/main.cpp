@@ -9,12 +9,11 @@ int main() {
     GunControl gun;
 
     if (!gun.init()) {
-        std::cerr << "Не вдалося ініціалізувати GunControl!\n";
+        std::cerr << "Не вдалося ініціалізувати систему!\n";
         return 1;
     }
 
-    std::cout << "✅ Система запущена успішно!\n\n";
-    gun.run_keyboard_control();
+    gun.run();        // ← викликаємо нову функцію run()
 
     std::cout << "Система завершена.\n";
     return 0;

@@ -6,8 +6,8 @@ public:
     GunControl();
     ~GunControl();
 
-    bool init();                    // ініціалізація + підйом CAN
-    void run();                     // головне меню
+    bool init();
+    void run();                     // ← Головне меню
 
     void pump_set(uint8_t percent);
     void move_horiz(int dir);
