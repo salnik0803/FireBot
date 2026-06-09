@@ -71,20 +71,22 @@ int can_send_bus_manager(uint8_t byte3, uint8_t byte5, uint8_t byte6) {
         if (can_open() < 0) return -1;
     }
 
-    uint32_t can_id = 0x0CFF1E00 | SA_PC;  // PGN 0xFF1E + SA_PC
+    // Важливо: правильний формат ID для твого BUS MANAGER
+    uint32_t can_id = 0x0CFF1EF0;   // 0x0CFF1E + SA_PC (0xF0)
 
     uint8_t data[8] = {0};
-    data[0] = 0xFF;      // стандартний префікс
+    data[0] = 0xFF;
     data[1] = 0x03;
-    data[2] = 0x00;      // emergency stop (0 = normal)
-    data[3] = byte3;     // насос 0-100%
+    data[2] = 0x00;        // Emergency stop
+    data[3] = byte3;       // Насос (0-100)
     data[4] = 0x00;
-    data[5] = byte5;     // рухи (VU, VD, HL, HR)
+    data[5] = byte5;       // Рухи (VU, VD, HL, HR)
     data[6] = byte6;
     data[7] = 0x00;
 
     if (can_send_raw(can_id, data, 8)) {
-        // std::cout << "CAN → Bus Manager sent\n";
+        std::cout << "[CAN SEND] byte3=" << (int)byte3 
+                  << " byte5=" << (int)byte5 << std::endl;
         return 0;
     }
     return -1;
