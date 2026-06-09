@@ -6,12 +6,12 @@ public:
     GunControl();
     ~GunControl();
 
-    bool init();
-    void run_keyboard_control();
+    bool init();                    // ініціалізація + підйом CAN
+    void run();                     // головне меню
 
     void pump_set(uint8_t percent);
-    void move_horiz(int dir);   // -1 = left, 1 = right
-    void move_vert(int dir);    // -1 = down, 1 = up
+    void move_horiz(int dir);
+    void move_vert(int dir);
     void stop_all();
 
 private:
