@@ -102,17 +102,17 @@ void GunControl::pump_set(uint8_t percent) {
     std::cout << "[НАСОС] " << (int)percent << "%\n";
 }
 
-void GunControl::move_horiz(int value) {
+void GunControl::move_horiz(int value) {  // value від -100 до 100
     BusManagerFrame fr = {0};
-    if (value > 20) fr.movement = 0x01;
-    else if (value < -20) fr.movement = 0x04;
+    if (value > 20) fr.movement = 0x01;      // право
+    else if (value < -20) fr.movement = 0x04; // ліво
     bm_send(&fr);
 }
 
 void GunControl::move_vert(int value) {
     BusManagerFrame fr = {0};
-    if (value > 20) fr.movement = 0x40;
-    else if (value < -20) fr.movement = 0x10;
+    if (value > 20) fr.movement = 0x40;      // вгору
+    else if (value < -20) fr.movement = 0x10; // вниз
     bm_send(&fr);
 }
 
@@ -122,10 +122,9 @@ void GunControl::stop_all() {
     std::cout << "[STOP ALL]\n";
 }
 
-// Головний цикл
 void GunControl::run() {
     std::cout << "\n=== POK Гармата - Керування активне ===\n";
-    std::cout << "Клавіатура (WASD +/- Space) + Джойстик працюють\n";
+    std::cout << "Лівий стік джойстика + клавіатура працюють одночасно\n";
     std::cout << "Q - Вихід\n\n";
 
     uint8_t pump = 0;
@@ -137,11 +136,9 @@ void GunControl::run() {
             while (read(g_joy_fd, &event, sizeof(event)) > 0) {
                 if (event.type & JS_EVENT_AXIS) {
                     int value = (event.value * 100) / 32767;
-                    if (event.number == 0) move_horiz(value);      // X axis
-                    if (event.number == 1) move_vert(-value);      // Y axis
-                }
-                if (event.type & JS_EVENT_BUTTON && event.value == 1) {
-                    if (event.number == 0) stop_all();   // Кнопка 1 (тригер)
+
+                    if (event.number == 0) move_horiz(value);      // ABS_X - горизонталь
+                    if (event.number == 1) move_vert(-value);      // ABS_Y - вертикаль (інверсія)
                 }
             }
         }
@@ -152,10 +149,10 @@ void GunControl::run() {
             if (c == 'q' || c == 'Q') break;
             if (c == ' ') { stop_all(); pump = 0; continue; }
 
-            if (c == 'w' || c == 'W') move_vert(30);
-            else if (c == 's' || c == 'S') move_vert(-30);
-            else if (c == 'a' || c == 'A') move_horiz(-30);
-            else if (c == 'd' || c == 'D') move_horiz(30);
+            if (c == 'w' || c == 'W') move_vert(40);
+            else if (c == 's' || c == 'S') move_vert(-40);
+            else if (c == 'a' || c == 'A') move_horiz(-40);
+            else if (c == 'd' || c == 'D') move_horiz(40);
             else if (c == '+' || c == '=') {
                 pump = (pump >= 90) ? 100 : pump + 10;
                 pump_set(pump);
@@ -166,7 +163,7 @@ void GunControl::run() {
             }
         }
 
-        usleep(30000); // 30ms цикл
+        usleep(20000); // 20ms - добре для відгуку
     }
 
     stop_all();
