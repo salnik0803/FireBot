@@ -16,38 +16,128 @@ static int g_sock = -1;
 #define PGN_BUS_MANAGER 0x00FF1E
 #define J1939_PRIORITY 3
 
-// ... (структура BusManagerFrame та j1939_build_id залишаються)
+typedef struct {
+    uint8_t free0 = 0;
+    uint8_t free1 = 0;
+    uint8_t emergency_stop = 0;
+    uint8_t nozzle_speed = 0;
+    uint8_t buttons = 0;
+    uint8_t movement = 0;
+    uint8_t ar_button = 0;
+    uint8_t setting = 0;
+} BusManagerFrame;
+
+uint32_t j1939_build_id(uint8_t prio, uint32_t pgn, uint8_t sa) {
+    return ((uint32_t)(prio & 0x7) << 26) | ((pgn & 0x1FFFF) << 8) | sa | CAN_EFF_FLAG;
+}
 
 GunControl::GunControl() {}
 GunControl::~GunControl() { stop_all(); }
 
 bool GunControl::init() {
     // Автоматичний підйом CAN
+    system("sudo ip link set can0 down 2>/dev/null || true");
     system("sudo slcand -o -c -s6 -S6 -t hw -F -b115200 /dev/ttyACM0 can0 2>/dev/null || true");
     sleep(1);
     system("sudo ip link set can0 up type can bitrate 250000 2>/dev/null || true");
+    sleep(1);
 
-    // ... (твій код ініціалізації сокета)
-    // (залиш той самий код can_init, який працював)
+    // Ініціалізація сокета
+    struct sockaddr_can addr;
+    struct ifreq ifr;
+
+    g_sock = socket(PF_CAN, SOCK_RAW, CAN_RAW);
+    if (g_sock < 0) { 
+        perror("socket"); 
+        return false; 
+    }
+
+    strncpy(ifr.ifr_name, "can0", IFNAMSIZ-1);
+    if (ioctl(g_sock, SIOCGIFINDEX, &ifr) < 0) { 
+        perror("ioctl"); 
+        return false; 
+    }
+
+    addr.can_family = AF_CAN;
+    addr.can_ifindex = ifr.ifr_ifindex;
+
+    if (bind(g_sock, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+        perror("bind"); 
+        return false;
+    }
+
+    std::cout << "[CAN] Підключено успішно + інтерфейс піднятий\n";
+    return true;
+}
+
+int bm_send(BusManagerFrame *fr) {
+    struct can_frame frame = {0};
+    frame.can_id = j1939_build_id(J1939_PRIORITY, PGN_BUS_MANAGER, SA_PC);
+    frame.can_dlc = 8;
+
+    uint8_t *d = frame.data;
+    d[0] = fr->free0; d[1] = fr->free1; d[2] = fr->emergency_stop;
+    d[3] = fr->nozzle_speed; d[4] = fr->buttons; d[5] = fr->movement;
+    d[6] = fr->ar_button; d[7] = fr->setting;
+
+    if (write(g_sock, &frame, sizeof(frame)) != sizeof(frame)) {
+        perror("CAN write");
+        return -1;
+    }
+    return 0;
+}
+
+void GunControl::pump_set(uint8_t percent) {
+    BusManagerFrame fr = {0};
+    fr.nozzle_speed = percent;
+    bm_send(&fr);
+    std::cout << "[НАСОС] " << (int)percent << "%\n";
+}
+
+void GunControl::move_horiz(int dir) {
+    BusManagerFrame fr = {0};
+    if (dir == 1) fr.movement = 0x01;
+    if (dir == -1) fr.movement = 0x04;
+    bm_send(&fr);
+    std::cout << "[ГОРИЗОНТАЛЬ] " << (dir == 1 ? "ПРАВО" : "ЛІВО") << "\n";
+}
+
+void GunControl::move_vert(int dir) {
+    BusManagerFrame fr = {0};
+    if (dir == 1) fr.movement = 0x40;
+    if (dir == -1) fr.movement = 0x10;
+    bm_send(&fr);
+    std::cout << "[ВЕРТИКАЛЬ] " << (dir == 1 ? "ВГОРУ" : "ВНИЗ") << "\n";
+}
+
+void GunControl::stop_all() {
+    BusManagerFrame fr = {0};
+    bm_send(&fr);
+    std::cout << "[STOP ALL]\n";
 }
 
 void GunControl::run() {
     std::cout << "\n=== POK Гармата - Головне меню ===\n";
-    std::cout << "1 - Керування гарматою (WASD + +/-)\n";
-    std::cout << "R - Перемкнути режим (Raspberry / POK пульт)\n";
-    std::cout << "Q - Вихід\n\n";
+    std::cout << "W/S - Вертикаль | A/D - Горизонталь\n";
+    std::cout << "+/- - Насос | Пробіл - Стоп | R - Перемкнути режим | Q - Вихід\n\n";
 
     uint8_t pump = 0;
+
     while (true) {
-        std::string input;
-        std::getline(std::cin, input);
-        if (input.empty()) continue;
-        char c = input[0];
+        std::string line;
+        std::getline(std::cin, line);
+        if (line.empty()) continue;
+        char c = line[0];
 
         if (c == 'q' || c == 'Q') break;
         if (c == 'r' || c == 'R') {
             remote_override = !remote_override;
-            std::cout << "→ Режим: " << (remote_override ? "RASPBERRY PI" : "POK PULT") << "\n";
+            std::cout << "→ Режим: " << (remote_override ? "RASPBERRY PI (OVERRIDE)" : "ЛОКАЛЬНИЙ PULT") << "\n";
+            continue;
+        }
+        if (c == ' ') {
+            stop_all();
+            pump = 0;
             continue;
         }
 
@@ -64,7 +154,6 @@ void GunControl::run() {
                 pump = (pump <= 10) ? 0 : pump - 10;
                 pump_set(pump);
             }
-            else if (c == ' ') stop_all();
         }
     }
     stop_all();
