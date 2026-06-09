@@ -11,7 +11,6 @@
 #include <sys/socket.h>
 #include <linux/can.h>
 #include <linux/can/raw.h>
-#include <sys/select.h>
 
 static int g_can_sock = -1;
 static int g_joy_fd = -1;
@@ -102,17 +101,18 @@ void GunControl::pump_set(uint8_t percent) {
     std::cout << "[НАСОС] " << (int)percent << "%\n";
 }
 
-void GunControl::move_horiz(int value) {
+// Швидкість залежить від нахилу (чим сильніше — тим швидше)
+void GunControl::move_horiz(int value) {   // value: -100 .. 100
     BusManagerFrame fr = {0};
-    if (value > 20) fr.movement = 0x01;
-    else if (value < -20) fr.movement = 0x04;
+    if (value > 20) fr.movement = 0x01;      // право
+    else if (value < -20) fr.movement = 0x04; // ліво
     bm_send(&fr);
 }
 
-void GunControl::move_vert(int value) {
+void GunControl::move_vert(int value) {    // value: -100 .. 100
     BusManagerFrame fr = {0};
-    if (value > 20) fr.movement = 0x10;   // інверсія
-    else if (value < -20) fr.movement = 0x40;
+    if (value > 20) fr.movement = 0x10;      // вниз (інверсія)
+    else if (value < -20) fr.movement = 0x40; // вгору
     bm_send(&fr);
 }
 
@@ -124,11 +124,12 @@ void GunControl::stop_all() {
 
 void GunControl::run() {
     std::cout << "\n=== POK Гармата - Керування активне ===\n";
-    std::cout << "Джойстик + Клавіатура працюють одночасно в реальному часі\n";
+    std::cout << "Лівий стік: горизонталь/вертикаль (швидкість залежить від нахилу)\n";
+    std::cout << "Клавіатура: WASD, +/-, Space\n";
     std::cout << "Q - вихід\n\n";
 
     while (true) {
-        // === Обробка Джойстика (реалтайм) ===
+        // === Джойстик ===
         if (g_joy_fd >= 0) {
             js_event event;
             while (read(g_joy_fd, &event, sizeof(event)) > 0) {
@@ -144,26 +145,19 @@ void GunControl::run() {
             }
         }
 
-        // === Обробка Клавіатури (неблокуюча) ===
-        fd_set fds;
-        FD_ZERO(&fds);
-        FD_SET(0, &fds);
-        struct timeval tv = {0, 10000};  // 10ms
+        // === Клавіатура ===
+        char c = 0;
+        if (read(0, &c, 1) > 0) {
+            if (c == 'q' || c == 'Q') break;
+            if (c == ' ') stop_all();
 
-        if (select(1, &fds, NULL, NULL, &tv) > 0) {
-            char c;
-            if (read(0, &c, 1) > 0) {
-                if (c == 'q' || c == 'Q') break;
-                if (c == ' ') stop_all();
-
-                if (c == 'w' || c == 'W') move_vert(-40);
-                else if (c == 's' || c == 'S') move_vert(40);
-                else if (c == 'a' || c == 'A') move_horiz(-40);
-                else if (c == 'd' || c == 'D') move_horiz(40);
-            }
+            if (c == 'w' || c == 'W') move_vert(-40);
+            else if (c == 's' || c == 'S') move_vert(40);
+            else if (c == 'a' || c == 'A') move_horiz(-40);
+            else if (c == 'd' || c == 'D') move_horiz(40);
         }
 
-        usleep(10000); // 10ms цикл — гарний баланс
+        usleep(15000); // 15ms — оптимально
     }
 
     stop_all();
