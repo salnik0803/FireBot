@@ -8,16 +8,9 @@ set(CMAKE_BUILD_TYPE Release)
 add_executable(pok_robot 
     src/main.cpp
     src/gun_control.cpp
-    src/platform_control.cpp
-    src/can_bus.cpp
-    src/utils.cpp
 )
 
-target_include_directories(pok_robot PRIVATE 
-    src
-    config
-)
+target_include_directories(pok_robot PRIVATE src)
+target_compile_options(pok_robot PRIVATE -Wall -O2)
 
-target_compile_options(pok_robot PRIVATE -Wall -Wextra -O2)
-
-message(STATUS "POK Robot Control project configured successfully!")
+message(STATUS "POK Robot Control - структура налаштована!")
