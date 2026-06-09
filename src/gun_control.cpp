@@ -11,6 +11,7 @@
 #include <sys/socket.h>
 #include <linux/can.h>
 #include <linux/can/raw.h>
+#include <sys/select.h>
 
 static int g_can_sock = -1;
 static int g_joy_fd = -1;
@@ -123,12 +124,11 @@ void GunControl::stop_all() {
 
 void GunControl::run() {
     std::cout << "\n=== POK Гармата - Керування активне ===\n";
-    std::cout << "Лівий стік джойстика керує гарматою в реальному часі\n";
-    std::cout << "Клавіатура: WASD, +/-, Space\n";
+    std::cout << "Джойстик + Клавіатура працюють одночасно в реальному часі\n";
     std::cout << "Q - вихід\n\n";
 
     while (true) {
-        // Обробка джойстика (реалтайм)
+        // === Обробка Джойстика (реалтайм) ===
         if (g_joy_fd >= 0) {
             js_event event;
             while (read(g_joy_fd, &event, sizeof(event)) > 0) {
@@ -136,7 +136,7 @@ void GunControl::run() {
                     int value = (event.value * 100) / 32767;
 
                     if (event.number == 0) move_horiz(value);      // Горизонталь
-                    if (event.number == 1) move_vert(value);       // Вертикаль (інверсія)
+                    if (event.number == 1) move_vert(value);       // Вертикаль
                 }
                 if (event.type & JS_EVENT_BUTTON && event.value == 1) {
                     if (event.number == 0) stop_all();   // Триґер — аварійний стоп
@@ -144,19 +144,26 @@ void GunControl::run() {
             }
         }
 
-        // Обробка клавіатури
-        char c = 0;
-        if (read(0, &c, 1) > 0) {
-            if (c == 'q' || c == 'Q') break;
-            if (c == ' ') stop_all();
+        // === Обробка Клавіатури (неблокуюча) ===
+        fd_set fds;
+        FD_ZERO(&fds);
+        FD_SET(0, &fds);
+        struct timeval tv = {0, 10000};  // 10ms
 
-            if (c == 'w' || c == 'W') move_vert(-40);
-            else if (c == 's' || c == 'S') move_vert(40);
-            else if (c == 'a' || c == 'A') move_horiz(-40);
-            else if (c == 'd' || c == 'D') move_horiz(40);
+        if (select(1, &fds, NULL, NULL, &tv) > 0) {
+            char c;
+            if (read(0, &c, 1) > 0) {
+                if (c == 'q' || c == 'Q') break;
+                if (c == ' ') stop_all();
+
+                if (c == 'w' || c == 'W') move_vert(-40);
+                else if (c == 's' || c == 'S') move_vert(40);
+                else if (c == 'a' || c == 'A') move_horiz(-40);
+                else if (c == 'd' || c == 'D') move_horiz(40);
+            }
         }
 
-        usleep(15000); // 15ms — хороший баланс швидкості та CPU
+        usleep(10000); // 10ms цикл — гарний баланс
     }
 
     stop_all();
