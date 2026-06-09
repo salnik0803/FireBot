@@ -4,13 +4,16 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <cstring>
+#include <fcntl.h>
+#include <linux/joystick.h>
 #include <net/if.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <linux/can.h>
 #include <linux/can/raw.h>
 
-static int g_sock = -1;
+static int g_can_sock = -1;
+static int g_joy_fd = -1;
 
 #define SA_PC 0xF0
 #define PGN_BUS_MANAGER 0x00FF1E
@@ -35,42 +38,51 @@ GunControl::GunControl() {}
 GunControl::~GunControl() { stop_all(); }
 
 bool GunControl::init() {
-    // Автоматичний підйом CAN
+    if (!init_can()) return false;
+    init_joystick();
+    return true;
+}
+
+bool GunControl::init_can() {
     system("sudo ip link set can0 down 2>/dev/null || true");
     system("sudo slcand -o -c -s6 -S6 -t hw -F -b115200 /dev/ttyACM0 can0 2>/dev/null || true");
     sleep(1);
     system("sudo ip link set can0 up type can bitrate 250000 2>/dev/null || true");
     sleep(1);
 
-    // Ініціалізація сокета
     struct sockaddr_can addr;
     struct ifreq ifr;
 
-    g_sock = socket(PF_CAN, SOCK_RAW, CAN_RAW);
-    if (g_sock < 0) { 
-        perror("socket"); 
-        return false; 
-    }
+    g_can_sock = socket(PF_CAN, SOCK_RAW, CAN_RAW);
+    if (g_can_sock < 0) { perror("CAN socket"); return false; }
 
     strncpy(ifr.ifr_name, "can0", IFNAMSIZ-1);
-    if (ioctl(g_sock, SIOCGIFINDEX, &ifr) < 0) { 
-        perror("ioctl"); 
-        return false; 
-    }
+    if (ioctl(g_can_sock, SIOCGIFINDEX, &ifr) < 0) { perror("CAN ioctl"); return false; }
 
     addr.can_family = AF_CAN;
     addr.can_ifindex = ifr.ifr_ifindex;
 
-    if (bind(g_sock, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
-        perror("bind"); 
-        return false;
+    if (bind(g_can_sock, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+        perror("CAN bind"); return false;
     }
 
-    std::cout << "[CAN] Підключено успішно + інтерфейс піднятий\n";
+    std::cout << "[CAN] Підключено успішно\n";
     return true;
 }
 
+bool GunControl::init_joystick() {
+    g_joy_fd = open("/dev/input/js0", O_RDONLY | O_NONBLOCK);
+    if (g_joy_fd >= 0) {
+        std::cout << "[JOYSTICK] ThrustMaster TCA Sidestick Airbus підключено!\n";
+        return true;
+    }
+    std::cout << "[JOYSTICK] Не знайдено (буде працювати клавіатура)\n";
+    return false;
+}
+
+// ====================== CAN ======================
 int bm_send(BusManagerFrame *fr) {
+    if (g_can_sock < 0) return -1;
     struct can_frame frame = {0};
     frame.can_id = j1939_build_id(J1939_PRIORITY, PGN_BUS_MANAGER, SA_PC);
     frame.can_dlc = 8;
@@ -80,10 +92,7 @@ int bm_send(BusManagerFrame *fr) {
     d[3] = fr->nozzle_speed; d[4] = fr->buttons; d[5] = fr->movement;
     d[6] = fr->ar_button; d[7] = fr->setting;
 
-    if (write(g_sock, &frame, sizeof(frame)) != sizeof(frame)) {
-        perror("CAN write");
-        return -1;
-    }
+    write(g_can_sock, &frame, sizeof(frame));
     return 0;
 }
 
@@ -94,20 +103,18 @@ void GunControl::pump_set(uint8_t percent) {
     std::cout << "[НАСОС] " << (int)percent << "%\n";
 }
 
-void GunControl::move_horiz(int dir) {
+void GunControl::move_horiz(int value) {
     BusManagerFrame fr = {0};
-    if (dir == 1) fr.movement = 0x01;
-    if (dir == -1) fr.movement = 0x04;
+    if (value > 20) fr.movement = 0x01;
+    else if (value < -20) fr.movement = 0x04;
     bm_send(&fr);
-    std::cout << "[ГОРИЗОНТАЛЬ] " << (dir == 1 ? "ПРАВО" : "ЛІВО") << "\n";
 }
 
-void GunControl::move_vert(int dir) {
+void GunControl::move_vert(int value) {
     BusManagerFrame fr = {0};
-    if (dir == 1) fr.movement = 0x40;
-    if (dir == -1) fr.movement = 0x10;
+    if (value > 20) fr.movement = 0x40;
+    else if (value < -20) fr.movement = 0x10;
     bm_send(&fr);
-    std::cout << "[ВЕРТИКАЛЬ] " << (dir == 1 ? "ВГОРУ" : "ВНИЗ") << "\n";
 }
 
 void GunControl::stop_all() {
@@ -116,32 +123,36 @@ void GunControl::stop_all() {
     std::cout << "[STOP ALL]\n";
 }
 
+// ====================== ОСНОВНИЙ ЦИКЛ ======================
 void GunControl::run() {
-    std::cout << "\n=== POK Гармата - Головне меню ===\n";
-    std::cout << "W/S - Вертикаль | A/D - Горизонталь\n";
-    std::cout << "+/- - Насос | Пробіл - Стоп | R - Перемкнути режим | Q - Вихід\n\n";
+    std::cout << "\n=== Керування POK Гарматою ===\n";
+    std::cout << "Клавіатура + Джойстик працюють одночасно\n";
+    std::cout << "W/S/A/D - поворот | +/- - насос | Space - стоп | Q - вихід\n\n";
 
     uint8_t pump = 0;
 
     while (true) {
-        std::string line;
-        std::getline(std::cin, line);
-        if (line.empty()) continue;
-        char c = line[0];
-
-        if (c == 'q' || c == 'Q') break;
-        if (c == 'r' || c == 'R') {
-            remote_override = !remote_override;
-            std::cout << "→ Режим: " << (remote_override ? "RASPBERRY PI (OVERRIDE)" : "ЛОКАЛЬНИЙ PULT") << "\n";
-            continue;
-        }
-        if (c == ' ') {
-            stop_all();
-            pump = 0;
-            continue;
+        // Обробка джойстика
+        if (g_joy_fd >= 0) {
+            js_event event;
+            while (read(g_joy_fd, &event, sizeof(event)) > 0) {
+                if (event.type & JS_EVENT_AXIS) {
+                    int value = (event.value * 100) / 32767;
+                    if (event.number == 0) move_horiz(value);      // X
+                    if (event.number == 1) move_vert(-value);      // Y (інверсія)
+                }
+                if (event.type & JS_EVENT_BUTTON && event.value) {
+                    if (event.number == 0) stop_all();   // Кнопка 1 (тригер)
+                }
+            }
         }
 
-        if (remote_override) {
+        // Обробка клавіатури
+        char c = 0;
+        if (read(0, &c, 1) > 0) {
+            if (c == 'q' || c == 'Q') break;
+            if (c == ' ') { stop_all(); pump = 0; continue; }
+
             if (c == 'w' || c == 'W') move_vert(1);
             else if (c == 's' || c == 'S') move_vert(-1);
             else if (c == 'a' || c == 'A') move_horiz(-1);
@@ -155,6 +166,9 @@ void GunControl::run() {
                 pump_set(pump);
             }
         }
+
+        usleep(50000); // 50ms - комфортна затримка
     }
+
     stop_all();
 }
