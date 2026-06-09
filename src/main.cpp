@@ -13,6 +13,7 @@ int main() {
         return 1;
     }
 
+    std::cout << "Підключено ThrustMaster TCA Sidestick Airbus\n";
     gun.run();
 
     std::cout << "Система завершена.\n";

@@ -8,11 +8,11 @@ public:
     ~GunControl();
 
     bool init();
-    void run();                     // головний цикл (клавіатура + джойстик)
+    void run();                    // Основний цикл (клавіатура + джойстик)
 
     void pump_set(uint8_t percent);
-    void move_horiz(int value);     // -100 .. 100
-    void move_vert(int value);      // -100 .. 100
+    void move_horiz(int value);    // -100..100
+    void move_vert(int value);     // -100..100
     void stop_all();
 
 private:
@@ -22,6 +22,6 @@ private:
 
     bool init_can();
     bool init_joystick();
-    void process_joystick();        // обробка подій від джойстика
+    void process_joystick();       // обробка джойстика
     void process_keyboard();
 };
